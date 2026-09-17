@@ -1,102 +1,188 @@
-Sterling Trust Bank — Retention & Credit Exposure Analysis (MySQL)
+# Sterling Trust Bank — Retention & Credit Exposure Analysis
 
-SQL analysis of a retail banking dataset covering customer records, loan performance, transaction activity and churn. The work moves from raw, dirty tables to a cleaned layer, then answers four business questions: how bad is churn, which customers show declining activity, where is credit risk concentrated, and how much loan exposure sits with customers who look like they're on their way out.
+**MySQL | SQL | Customer Retention | Churn Analysis | Credit Risk**
 
-Data note: this is a synthetic dataset used for portfolio purposes. Names, incomes and transactions are randomly generated and do not represent any real institution or customer. Because the values are random, relationships between variables are mostly noise — findings below are reported as what the data shows, not as banking insight.
+SQL analysis of a synthetic retail banking dataset covering customer records, loan performance, transaction activity, and churn.
 
-The brief
+The project moves from **raw, inconsistent data to a cleaned analysis layer**, then investigates four key business areas:
 
-Sterling Trust Bank's retention committee has customers leaving but no view of who is disengaging, and no sense of whether the loan book is concentrated in over-leveraged borrowers. Four raw tables were handed over. The questions:
+- Customer churn and reasons for leaving
+- Declining customer transaction activity
+- Credit exposure by loan-to-income risk tier
+- Customers registered but showing no transaction activity
 
-How bad is churn, and what do leavers say their reason was?
-Which customers show a sharp drop in activity relative to their own history?
-Where is credit exposure concentrated by loan-to-income tier?
-How many registered customers have never transacted at all?
-Dataset
-Table	Rows (raw)	Notes
-Customers	510	7 exact duplicate rows; NULLs in Income, Age, Gender
-Loans	568	5 exact duplicate rows; NULLs in LoanStatus, CustomerID
-Transactions	18,740	No duplicates. Dates 2025-01-01 → 2026-08-24
-ChurnLog	500	110 churned. Reason populated for 75 of them
+> **Data Note:** This project uses a synthetic dataset created for portfolio purposes. Names, incomes, transactions, and other values are randomly generated and do not represent any real bank or customer. Because the data is synthetic, relationships between variables may largely reflect random variation. Findings are presented as **observations from the dataset**, not real-world banking conclusions.
 
-Loan issue dates run 2023-01-05 → 2025-06-19.
+---
 
-Data quality issues found
-Region had 13 spellings for 5 cities (Lagos, lagos, LAGOS, PH, Port-Harcourt, Port Harcourt, Abuja, ABUJA, Abuja FCT, …) → standardised to 5.
-LoanStatus had 10 variants for 3 states (Default, defaulted, DEFAULT, Paid-Off, paid off, PAID OFF, …) plus NULLs → standardised to 3.
-Duplicates: 7 customer rows and 5 loan rows were exact duplicates, removed with SELECT DISTINCT into Cleaned_Customers / Cleaned_Loans.
-Churn reasons: 35 of the 110 churned customers have no reason recorded. Labelled Unknown rather than dropped, so the reason breakdown sums to 100%.
-Coverage gap: some customers in Cleaned_Customers have no row in ChurnLog at all, checked explicitly rather than assumed.
-Method
-1. Cleaning
+## Business Questions
 
-Duplicates removed into Cleaned_Customers / Cleaned_Loans. Region and loan-status casing/spelling standardised on the cleaned tables only — the raw customers and loans tables are left untouched as an audit trail. Missing churn reasons labelled Unknown rather than dropped, so percentages stay interpretable.
+The retention committee wants to understand customer disengagement and potential credit exposure.
 
-2. Churn and engagement decline
+This analysis answers:
 
-churnlog gets two derived columns:
+1. **How significant is customer churn, and why are customers leaving?**
+2. **Which customers show a significant decline in transaction activity compared with their own history?**
+3. **Where is loan exposure concentrated by loan-to-income risk tier?**
+4. **How many registered customers have never recorded a transaction?**
 
-Churn_status — Churned / Not churned, from whether ChurnDate is set.
-Churn_risk — At Risk / Not At Risk, from a 60-day transaction-decay window (below).
-3. Credit risk tier
+---
 
-cleaned_loans gets Loan_Income_Ratio = (LoanAmount / Income) * 100, tiered:
+## Dataset
 
-Tier	Ratio
+| Table | Rows | Description |
+|---|---:|---|
+| `Customers` | 510 | Customer demographics and income |
+| `Loans` | 568 | Customer loan records and loan status |
+| `Transactions` | 18,740 | Customer transaction activity |
+| `ChurnLog` | 500 | Customer churn records and reasons |
+
+**Transaction period:** 2025-01-01 → 2026-08-24  
+**Loan issue period:** 2023-01-05 → 2025-06-19
+
+---
+
+## Data Quality & Cleaning
+
+Several data-quality issues were identified and addressed before analysis:
+
+- **Region inconsistencies:** 13 different spellings/capitalisation patterns were standardised into 5 regions.
+- **Loan status inconsistencies:** 10 variants such as `Default`, `defaulted`, `DEFAULT`, and `Paid-Off` were standardised into 3 statuses.
+- **Duplicate records:** 7 duplicate customer rows and 5 duplicate loan rows were removed using `SELECT DISTINCT`.
+- **Missing churn reasons:** 35 of the 110 churned customers had no recorded reason. These were labelled `Unknown` rather than excluded from the analysis.
+- **Customer coverage:** Customers without a corresponding record in `ChurnLog` were checked explicitly rather than assumed to be churn-free.
+
+The raw tables remain unchanged as an audit trail. Cleaned versions are stored as:
+
+```text
+Cleaned_Customers
+Cleaned_Loans
+Analysis Method
+
+**1. Churn Analysis**
+
+Two derived fields were created in ChurnLog:
+Churn_status — identifies customers as Churned or Not Churned based on whether a ChurnDate exists.
+Churn_risk — identifies customers showing significant transaction decline based on their historical activity.
+
+**2. Customer Activity Decline**
+
+Customer activity was divided into 60-day periods based on each customer's latest transaction.
+
+For each customer:
+
+Period 0 → Most recent 60 days
+Period 1 → 60–119 days before latest activity
+Period 2 → 120–179 days before latest activity
+Period 3 → 180–239 days before latest activity
+
+Transactions were counted within each period.
+
+The analysis then compares:
+
+Recent 60-Day Activity
+
+versus
+
+Historical Average Activity
+
+A customer is flagged as At Risk when their recent activity falls below 50% of their historical average.
+
+<img width="1563" height="659" alt="Screenshot 2026-09-17 111042" src="https://github.com/user-attachments/assets/b20ee79a-e051-43da-b3ef-d7b401d707d9" />
+<img width="1569" height="423" alt="Screenshot 2026-09-17 111110" src="https://github.com/user-attachments/assets/a8a59dfa-66ad-4e56-94df-b8db51ec44c7" />
+
+-- Recent 60-day activity is compared with
+-- the historical average.
+-- Customers with activity below 50% of
+-- their historical average are flagged At Risk.
+
+Important: This is a retrospective engagement signal, not a predictive churn model. Because the window is anchored to each customer's latest transaction, it measures whether activity declined before their most recent activity rather than predicting whether they will churn in the future.
+
+**3. Loan-to-Income Risk Tier**
+
+A Loan_Income_Ratio was calculated using:
+
+Loan Income Ratio = (Loan Amount / Income) × 100
+
+Loans were then classified into three tiers:
+
+Tier	Loan-to-Income Ratio
 Low Risk	≤ 28%
-Medium Risk	28–50%
+Medium Risk	> 28% and < 50%
 High Risk	≥ 50%
+<img width="1548" height="268" alt="Screenshot 2026-09-17 111536" src="https://github.com/user-attachments/assets/c4d7c284-f26a-4ec4-92fa-77d09f59dda1" />
 
-The 28% threshold is the conventional housing-expense rule of thumb and 50% the total-debt ceiling, applied here to loan principal against annual income rather than monthly repayment — a leverage proxy, not a true debt-service ratio.
 
-The 60-day decay window, in detail
-sql
-WITH maximum AS (
-    SELECT customers.CustomerID, MAX(TransactionDate) AS latest_activity
-    FROM customers
-    LEFT JOIN transactions ON customers.CustomerID = transactions.CustomerID
-    GROUP BY customers.CustomerID
-),
-period_counts AS (
-    SELECT maximum.CustomerID,
-           FLOOR(DATEDIFF(maximum.latest_activity, transactions.TransactionDate) / 60) AS period_number,
-           COUNT(transactions.TransactionID) AS transaction_count
-    FROM maximum
-    JOIN transactions ON maximum.CustomerID = transactions.CustomerID
-    GROUP BY maximum.CustomerID, period_number
-)
--- recent_60_days vs historical_average per customer, flagged At Risk
--- when recent activity falls below half the historical average.
+Methodological Note: The 28% and 50% thresholds are used here as portfolio segmentation rules. The calculation compares loan principal with annual income, so it is a leverage proxy, not a true debt-service or affordability ratio.
 
-Read this carefully: the window is anchored to each customer's own most recent transaction, not to a fixed calendar date. So this measures whether a customer was winding down before they stopped, not whether they are likely to leave next month — a retrospective decline signal, not a forward-looking prediction. Query 5 in the analysis section cross-tabs the flag against actual churn to check whether it separates anything.
+4. Loan Exposure & Customer Churn
 
-Credit tier, in detail
-sql
-update cleaned_loans set Tier = case
-    when Loan_Income_Ratio <= 28 then "Low Risk"
-    when Loan_Income_Ratio < 50  then "Medium Risk"
-    when Loan_Income_Ratio >= 50 then "High Risk"
-end where Loan_Income_Ratio is not null;
-Repo layout
-Sterling.sql        -- full script: cleaning, then analysis, in order
-docs/
-  findings.md        -- results and recommendations, filled from query output
-How to run
+Loan and churn data were joined to determine how much active loan principal is held by customers flagged as At Risk.
 
-Run Sterling.sql top to bottom in MySQL Workbench against a database containing the four raw tables. Not idempotent — the ALTER TABLE steps (adding Churn_status, Churn_risk, Loan_Income_Ratio, Tier) will error if run a second time without first dropping those columns. Re-run from a fresh copy of the raw tables, or drop the added columns before re-running.
+<img width="1511" height="104" alt="Screenshot 2026-09-17 111645" src="https://github.com/user-attachments/assets/764a7c5b-28cc-4b4d-baf0-7b755f4003d1" />
 
-Findings
 
-(fill in from your own query output — see docs/findings.md)
+This connects customer engagement risk with outstanding credit exposure, allowing the analysis to identify where active loan balances are held by customers showing declining activity.
 
-Churn rate: __% churned, __% retained
-Top reasons for leaving: __
-Churn by region / tenure / age: biggest spread was __
-Does the decline flag predict churn? __
-Default rate by risk tier: __ — does the tier actually separate defaults, or is it roughly flat across tiers?
-Exposure: __ in active loan principal held by customers flagged At Risk
-Known limitations
-The engagement flag is retrospective, not predictive (see above).
-Loan-to-income uses principal against annual income, not monthly debt service.
-Script is not re-runnable without resetting the raw tables first.
-Dataset is synthetic; cross-segment differences are largely sampling noise rather than real signal — reported as observed, not as banking insight.
+**Key Findings**
+
+Replace the placeholders below with the results from the SQL queries.
+
+- **Churn rate**: 22% churned vs 78% retained
+- **Top churn reasons**: Unknown(31.8%)
+- **Churn by region / tenure / age**: Lagos / 10+ / 45-59 Years
+Activity decline vs actual churn: customers flagged At Risk churned at 29.2% (7 of 24) vs 21.6% for Not At Risk (103 of 476) — roughly 1.35x higher. The direction is right, but the At Risk group is small (24 of 500), so this is a real but modest signal, not a strong predictor
+**Active loan exposure among At Risk customers**: ₦331,168 across 5 active loans, vs ₦12,053,324 held by Not At Risk customers — At Risk customers hold about 2.7% of total active principal
+
+**Key Business Takeaways**
+
+The analysis is designed to move beyond simply describing the data.
+
+Examples of decisions supported by the analysis include:
+
+- Identifying customer segments requiring retention attention
+- Understanding the main recorded reasons behind customer exits
+- Identifying customers whose transaction activity has declined substantially
+- Monitoring active loan exposure associated with customers showing declining engagement
+- Evaluating whether the loan-to-income segmentation actually differentiates default behaviour in the dataset
+- Identifying registered customers who have never become transactionally active
+
+**Project Structure**
+Sterling-Trust-Bank/
+│
+├── Sterling.sql
+│   └── Data cleaning, transformation and analysis queries
+│
+└── docs/
+    └── findings.md
+        └── Detailed findings and recommendations
+**How to Run**
+- Create a MySQL database containing the four raw tables:
+Customers
+Loans
+Transactions
+ChurnLog
+- Open Sterling.sql in MySQL Workbench.
+- Run the script from top to bottom.
+- Review the query outputs and record the final results in:
+docs/findings.md
+
+Note: The script is not currently idempotent. Running it multiple times without resetting the tables may cause errors when adding derived columns such as Churn_status, Churn_risk, Loan_Income_Ratio, and Tier.
+
+**Limitations**
+- The customer activity flag is retrospective, not a forward-looking churn prediction.
+- Loan-to-income ratio uses loan principal ÷ annual income, rather than monthly repayment obligations.
+- The risk thresholds are segmentation rules and should not be interpreted as formal lending policy.
+- The dataset is synthetic, so observed relationships may reflect random variation rather than genuine banking behaviour.
+- The SQL script requires the database to be reset before a clean re-run.
+
+** Tools Used**
+- MySQL Workbench
+- CTEs
+- Joins
+- Aggregations
+- CASE statements
+- Date functions
+- Data cleaning and transformation
+- Customer churn analysis
+- Credit exposure analysis
